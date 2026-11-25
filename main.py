@@ -1,58 +1,62 @@
+#!/usr/bin/env python3
 """One-Line Laugh-Off entry.
 
-Copies line.txt (the entry, one funny line, 1-200 characters) to
-/output/entry.txt byte for byte. MAKEFUN_OUTPUT_DIR, when set, stands
-in for /output so the entry can be tested locally.
-
-Fails loudly if anything is off: the text is not valid UTF-8, it is
-not 1-200 characters, it is only white space, it spans more than one
-line, or the copy differs from line.txt in size or bytes.
-
-Standard library only. No network, no randomness, no timestamps.
+Writes a single one-line joke to /output/entry.txt and self-checks
+the output before declaring success. Standard library only, no network.
 """
 
-import os
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-LINE_FILE = HERE / "line.txt"
-OUTPUT_DIR = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
-OUTPUT_FILE = OUTPUT_DIR / "entry.txt"
+ENTRY = "My password manager forgot my password, so now we just stare at each other in silence."
+
+OUTPUT_PATH = Path("/output/entry.txt")
+
+MIN_LENGTH = 1
+MAX_LENGTH = 200
 
 
-def main() -> None:
-    source = LINE_FILE.read_bytes()
+def fail(message: str) -> "NoReturn":
+    """Print a loud failure and exit non-zero."""
+    print(f"FAIL: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def check_entry(text: str) -> None:
+    """Gate self-check: UTF-8, length 1-200, non-blank, single line."""
     try:
-        text = source.decode("utf-8", errors="strict")
-    except UnicodeDecodeError as exc:
-        raise RuntimeError(f"line.txt is not valid UTF-8: {exc}") from exc
+        text.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        fail(f"entry is not valid UTF-8: {exc}")
 
-    if not 1 <= len(text) <= 200:
-        raise RuntimeError(
-            f"entry is {len(text)} characters, allowed 1-200"
-        )
+    if not MIN_LENGTH <= len(text) <= MAX_LENGTH:
+        fail(f"entry length {len(text)} is outside {MIN_LENGTH}-{MAX_LENGTH} characters")
+
     if not text.strip():
-        raise RuntimeError("entry must not be only white space")
+        fail("entry is blank or whitespace only")
+
+    # No stray leading/trailing whitespace: the line must be exactly itself.
+    if text != text.strip():
+        fail("entry has leading or trailing whitespace")
+
     if "\n" in text or "\r" in text:
-        raise RuntimeError("entry must be a single line")
+        fail("entry must be a single line with no newline characters")
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_FILE.write_bytes(source)
 
-    written = OUTPUT_FILE.read_bytes()
-    if written != source:
-        raise RuntimeError(
-            f"copy differs from line.txt: wrote {len(written)} bytes, "
-            f"source is {len(source)} bytes"
-        )
+def main() -> int:
+    check_entry(ENTRY)
 
-    print(f"wrote {OUTPUT_FILE} ({len(source)} bytes, {len(text)} characters)")
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT_PATH.write_text(ENTRY, encoding="utf-8")
+
+    written = OUTPUT_PATH.read_text(encoding="utf-8")
+    check_entry(written)
+    if written != ENTRY:
+        fail("round-trip check failed: file content differs from entry")
+
+    print(f"OK: wrote {len(written)} characters, 1 line, to {OUTPUT_PATH}")
+    return 0
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except RuntimeError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        raise
+    raise SystemExit(main())
